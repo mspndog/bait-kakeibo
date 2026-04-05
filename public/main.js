@@ -171,7 +171,7 @@ function renderDashboard() {
     document.getElementById('cash-balance').textContent = `¥ ${appData.cashBalance.toLocaleString()}`;
     document.getElementById('paypay-balance').textContent = `¥ ${appData.paypayBalance.toLocaleString()}`;
     document.getElementById('pending-salary-value').textContent = `¥ ${appData.pendingSalary.toLocaleString()}`;
-    document.getElementById('user-display').textContent = `admin`;
+    document.getElementById('user-display').textContent = appData.username || 'User';
 
     const collectBtn = document.getElementById('btn-collect-salary');
     if (appData.pendingSalary > 0) collectBtn.classList.remove('hidden');

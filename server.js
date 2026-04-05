@@ -112,6 +112,7 @@ app.get('/api/data', (req, res) => {
         .reduce((sum, s) => sum + s.earnings, 0);
 
     res.json({
+        username: user.username,
         cashBalance: user.cashBalance || 0,
         paypayBalance: user.paypayBalance || 0,
         hourlyWage: user.hourlyWage,
