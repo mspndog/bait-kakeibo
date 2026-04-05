@@ -66,6 +66,10 @@
                         <span class="icon">💸</span>
                         <span>支出を記録</span>
                     </button>
+                    <button id="btn-add-income" class="action-card">
+                        <span class="icon">🎁</span>
+                        <span>お小遣い・収入</span>
+                    </button>
                     <button id="btn-add-shift" class="action-card">
                         <span class="icon">🕒</span>
                         <span>バイト代を追加</span>
@@ -97,10 +101,10 @@
                     <label>カテゴリー</label>
                     <select id="expense-category">
                         <option value="食費">食費</option>
-                        <option value="交通費">交通費</option>
-                        <option value="娯楽">娯楽</option>
-                        <option value="生活用品">生活用品</option>
-                        <option value="その他">その他</option>
+                        <option value="日用品">日用品</option>
+                        <option value="衣服">衣服</option>
+                        <option value="美容">美容</option>
+                        <option value="遊び">遊び</option>
                     </select>
                 </div>
                 <div class="input-group">
@@ -145,7 +149,31 @@
             </div>
         </div>
 
+        <!-- 収入入力モーダル -->
+        <div id="modal-income" class="modal">
+            <div class="modal-content">
+                <h3>🎁 お小遣い・収入記録</h3>
+                <div class="input-group">
+                    <label>金額 (円)</label>
+                    <input type="number" id="income-amount" placeholder="3000">
+                </div>
+                <div class="input-group">
+                    <label>日付</label>
+                    <input type="date" id="income-date">
+                </div>
+                <div class="input-group">
+                    <label>メモ</label>
+                    <input type="text" id="income-desc" placeholder="お小遣い、臨時収入など">
+                </div>
+                <div class="modal-btns">
+                    <button class="btn-cancel">キャンセル</button>
+                    <button id="submit-income" class="primary-btn">追加する</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 初期残高設定モーダル -->
+
         <div id="modal-init" class="modal">
             <div class="modal-content">
                 <h3>💰 初期残高の設定</h3>

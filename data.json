@@ -3,10 +3,18 @@
     {
       "username": "admin",
       "password": "admin",
-      "savings": 0,
-      "hourlyWage": 1100
+      "savings": 71875,
+      "hourlyWage": 1250
     }
   ],
   "expenses": [],
-  "shifts": []
+  "shifts": [
+    {
+      "id": 1775380651326,
+      "username": "admin",
+      "hours": 9.5,
+      "earnings": 11875,
+      "date": "2026-04-05"
+    }
+  ]
 }

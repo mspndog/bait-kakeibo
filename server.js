@@ -23,7 +23,8 @@ if (!fs.existsSync(DATA_FILE)) {
     fs.writeFileSync(DATA_FILE, JSON.stringify({
         users: [{ username: 'admin', password: 'admin', savings: 0, hourlyWage: 1100 }],
         expenses: [],
-        shifts: []
+        shifts: [],
+        incomes: []
     }, null, 2));
 }
 
@@ -58,12 +59,14 @@ app.get('/api/data', (req, res) => {
     const user = data.users.find(u => u.username === req.session.username);
     const userExpenses = data.expenses.filter(e => e.username === req.session.username);
     const userShifts = data.shifts.filter(s => s.username === req.session.username);
+    const userIncomes = (data.incomes || []).filter(i => i.username === req.session.username);
     
     res.json({
         savings: user.savings,
         hourlyWage: user.hourlyWage,
         expenses: userExpenses,
-        shifts: userShifts
+        shifts: userShifts,
+        incomes: userIncomes
     });
 });
 
@@ -118,6 +121,32 @@ app.post('/api/shift', (req, res) => {
     data.users[userIndex].savings += earnings;
     // 時給設定も更新（次回のため）
     data.users[userIndex].hourlyWage = parseInt(wage);
+    
+    writeData(data);
+    res.json({ success: true, savings: data.users[userIndex].savings });
+});
+
+// 収入（お小遣い等）追加API
+app.post('/api/income', (req, res) => {
+    if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
+    
+    const { amount, date, description } = req.body;
+    const data = readData();
+    const userIndex = data.users.findIndex(u => u.username === req.session.username);
+    
+    // 収入を記録
+    const newIncome = {
+        id: Date.now(),
+        username: req.session.username,
+        amount: parseInt(amount),
+        date,
+        description
+    };
+    if (!data.incomes) data.incomes = [];
+    data.incomes.push(newIncome);
+    
+    // 貯金を増やす
+    data.users[userIndex].savings += parseInt(amount);
     
     writeData(data);
     res.json({ success: true, savings: data.users[userIndex].savings });

@@ -17,6 +17,7 @@ const historyList = document.getElementById('history-list');
 // モーダル
 const modals = {
     expense: document.getElementById('modal-expense'),
+    income: document.getElementById('modal-income'),
     shift: document.getElementById('modal-shift'),
     init: document.getElementById('modal-init')
 };
@@ -27,7 +28,8 @@ let appData = {
     savings: 0,
     hourlyWage: 1100,
     expenses: [],
-    shifts: []
+    shifts: [],
+    incomes: []
 };
 
 // --- 初期化 ---
@@ -42,8 +44,8 @@ function setupEventListeners() {
     logoutBtn.onclick = logout;
 
     // モーダル開閉
-    document.getElementById('btn-add_expense')?.addEventListener('click', () => openModal('expense')); // ID修正対応
     document.getElementById('btn-add-expense').onclick = () => openModal('expense');
+    document.getElementById('btn-add-income').onclick = () => openModal('income');
     document.getElementById('btn-add-shift').onclick = () => openModal('shift');
     document.getElementById('btn-set-init').onclick = () => openModal('init');
 
@@ -53,6 +55,7 @@ function setupEventListeners() {
 
     // フォーム送信
     document.getElementById('submit-expense').onclick = submitExpense;
+    document.getElementById('submit-income').onclick = submitIncome;
     document.getElementById('submit-shift').onclick = submitShift;
     document.getElementById('submit-init').onclick = submitInitSavings;
 
@@ -73,6 +76,7 @@ function setupEventListeners() {
 function setDefaultDates() {
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('expense-date').value = today;
+    document.getElementById('income-date').value = today;
     document.getElementById('shift-date').value = today;
 }
 
@@ -161,6 +165,25 @@ async function submitShift() {
     }
 }
 
+async function submitIncome() {
+    const amount = document.getElementById('income-amount').value;
+    const date = document.getElementById('income-date').value;
+    const description = document.getElementById('income-desc').value;
+
+    if (!amount) return alert('金額を入力してください');
+
+    const res = await fetch('/api/income', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, date, description })
+    });
+
+    if (res.ok) {
+        closeModal();
+        await checkAuth();
+    }
+}
+
 async function submitInitSavings() {
     const amount = document.getElementById('init-amount').value;
     if (!amount) return alert('金額を入力してください');
@@ -193,7 +216,8 @@ function renderDashboard() {
     // 履歴の統合とソート
     const history = [
         ...appData.expenses.map(e => ({ ...e, type: 'expense', title: e.category, sub: e.description })),
-        ...appData.shifts.map(s => ({ ...s, type: 'income', title: 'バイト給与', sub: `${s.hours}時間勤務` }))
+        ...appData.shifts.map(s => ({ ...s, type: 'income', title: 'バイト給与', sub: `${s.hours}時間勤務` })),
+        ...(appData.incomes || []).map(i => ({ ...i, type: 'income', title: '臨時収入', sub: i.description }))
     ];
     
     history.sort((a, b) => new Date(b.date || b.id) - new Date(a.date || a.id));
