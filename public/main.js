@@ -12,6 +12,7 @@ const passwordInput = document.getElementById('password');
 const loginError = document.getElementById('login-error');
 
 const totalSavingsDisplay = document.getElementById('total-savings');
+const pendingSalaryDisplay = document.getElementById('pending-salary-value');
 const historyList = document.getElementById('history-list');
 
 // モーダル
@@ -200,6 +201,15 @@ async function submitInitSavings() {
     }
 }
 
+async function collectSalary() {
+    if (!confirm('未受取のバイト代をすべて貯金に追加しますか？')) return;
+    
+    const res = await fetch('/api/collect-salary', { method: 'POST' });
+    if (res.ok) {
+        await checkAuth();
+    }
+}
+
 // --- UI更新 ---
 function showScreen(screen) {
     loginScreen.classList.remove('active');
@@ -211,6 +221,22 @@ function showScreen(screen) {
 
 function renderDashboard() {
     totalSavingsDisplay.textContent = `¥ ${appData.savings.toLocaleString()}`;
+    pendingSalaryDisplay.textContent = `¥ ${appData.pendingSalary.toLocaleString()}`;
+    
+    // 給与受け取りボタンの表示制御
+    if (appData.pendingSalary > 0) {
+        if (!document.getElementById('btn-collect')) {
+            const btn = document.createElement('button');
+            btn.id = 'btn-collect';
+            btn.className = 'btn-collect-salary';
+            btn.textContent = '給料を受け取る';
+            btn.onclick = collectSalary;
+            document.querySelector('.pending-salary').appendChild(btn);
+        }
+    } else {
+        document.getElementById('btn-collect')?.remove();
+    }
+
     document.getElementById('shift-wage').value = appData.hourlyWage;
     
     // 履歴の統合とソート

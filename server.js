@@ -61,12 +61,18 @@ app.get('/api/data', (req, res) => {
     const userShifts = data.shifts.filter(s => s.username === req.session.username);
     const userIncomes = (data.incomes || []).filter(i => i.username === req.session.username);
     
+    // 未受取の給与総額を計算 (paid: false のもののみ)
+    const pendingSalary = userShifts
+        .filter(s => !s.paid)
+        .reduce((sum, s) => sum + s.earnings, 0);
+
     res.json({
         savings: user.savings,
         hourlyWage: user.hourlyWage,
         expenses: userExpenses,
         shifts: userShifts,
-        incomes: userIncomes
+        incomes: userIncomes,
+        pendingSalary: pendingSalary
     });
 });
 
@@ -107,23 +113,44 @@ app.post('/api/shift', (req, res) => {
     const wage = hourlyWage || data.users[userIndex].hourlyWage;
     const earnings = parseFloat(hours) * parseInt(wage);
     
-    // シフトを記録
+    // シフトを記録 (ここでは貯金には加算しない)
     const newShift = {
         id: Date.now(),
         username: req.session.username,
         hours: parseFloat(hours),
         earnings: earnings,
-        date
+        date,
+        paid: false // 月末払いのためのフラグ
     };
     data.shifts.push(newShift);
     
-    // 貯金を増やす
-    data.users[userIndex].savings += earnings;
-    // 時給設定も更新（次回のため）
+    // 時給設定のみ更新
     data.users[userIndex].hourlyWage = parseInt(wage);
     
     writeData(data);
     res.json({ success: true, savings: data.users[userIndex].savings });
+});
+
+// 給料をすべて受け取って貯金に入れるAPI
+app.post('/api/collect-salary', (req, res) => {
+    if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
+    
+    const data = readData();
+    const userIndex = data.users.findIndex(u => u.username === req.session.username);
+    
+    // 未受取の給与を計算して貯金に加算し、フラグを更新
+    let totalCollected = 0;
+    data.shifts.forEach(s => {
+        if (s.username === req.session.username && !s.paid) {
+            totalCollected += s.earnings;
+            s.paid = true;
+        }
+    });
+    
+    data.users[userIndex].savings += totalCollected;
+    
+    writeData(data);
+    res.json({ success: true, savings: data.users[userIndex].savings, collected: totalCollected });
 });
 
 // 収入（お小遣い等）追加API
