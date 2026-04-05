@@ -1,84 +1,49 @@
 // bait-kakeibo/public/main.js
 
-// 画面要素
-const loginScreen = document.getElementById('login-screen');
-const mainScreen = document.getElementById('main-screen');
-
-// フォーム・ボタン
-const loginBtn = document.getElementById('login-btn');
-const logoutBtn = document.getElementById('logout-btn');
-const usernameInput = document.getElementById('username');
-const passwordInput = document.getElementById('password');
-const loginError = document.getElementById('login-error');
-
-const totalSavingsDisplay = document.getElementById('total-savings');
-const pendingSalaryDisplay = document.getElementById('pending-salary-value');
-const historyList = document.getElementById('history-list');
-
-// モーダル
-const modals = {
-    expense: document.getElementById('modal-expense'),
-    income: document.getElementById('modal-income'),
-    shift: document.getElementById('modal-shift'),
-    init: document.getElementById('modal-init')
-};
-
-// --- ステート ---
-let currentUser = null;
 let appData = {
-    savings: 0,
+    cashBalance: 0,
+    paypayBalance: 0,
     hourlyWage: 1100,
     expenses: [],
     shifts: [],
-    incomes: []
+    incomes: [],
+    pendingSalary: 0
 };
 
-// --- 初期化 ---
+let currentYear, currentMonth;
+let expenseChart, incomeChart;
+
 document.addEventListener('DOMContentLoaded', () => {
+    const now = new Date();
+    currentYear = now.getFullYear();
+    currentMonth = now.getMonth();
+    
     checkAuth();
     setupEventListeners();
-    setDefaultDates();
 });
 
 function setupEventListeners() {
-    loginBtn.onclick = login;
-    logoutBtn.onclick = logout;
+    // 認証
+    document.getElementById('login-btn').onclick = login;
+    document.getElementById('password').onkeydown = (e) => { if (e.key === 'Enter') login(); };
+    document.getElementById('logout-btn').onclick = logout;
+    document.getElementById('btn-reset').onclick = resetData;
 
-    // モーダル開閉
-    document.getElementById('btn-add-expense').onclick = () => openModal('expense');
-    document.getElementById('btn-add-income').onclick = () => openModal('income');
-    document.getElementById('btn-add-shift').onclick = () => openModal('shift');
-    document.getElementById('btn-set-init').onclick = () => openModal('init');
+    // アクション
+    document.getElementById('btn-add-expense').onclick = () => openActionModal('expense');
+    document.getElementById('btn-add-income').onclick = () => openActionModal('income');
+    document.getElementById('btn-add-shift').onclick = () => openActionModal('shift');
+    document.getElementById('btn-set-init').onclick = () => openActionModal('init');
+    document.getElementById('btn-collect-salary').onclick = () => document.getElementById('modal-collect').classList.add('active');
 
-    document.querySelectorAll('.btn-cancel').forEach(btn => {
-        btn.onclick = closeModal;
-    });
+    // カレンダー
+    document.getElementById('prev-month').onclick = () => changeMonth(-1);
+    document.getElementById('next-month').onclick = () => changeMonth(1);
 
-    // フォーム送信
-    document.getElementById('submit-expense').onclick = submitExpense;
-    document.getElementById('submit-income').onclick = submitIncome;
-    document.getElementById('submit-shift').onclick = submitShift;
-    document.getElementById('submit-init').onclick = submitInitSavings;
-
-    // シフトプレビュー
-    const shiftHours = document.getElementById('shift-hours');
-    const shiftWage = document.getElementById('shift-wage');
-    const preview = document.getElementById('salary-calc-preview');
-    
-    [shiftHours, shiftWage].forEach(el => {
-        el.oninput = () => {
-            const h = parseFloat(shiftHours.value) || 0;
-            const w = parseInt(shiftWage.value) || 0;
-            preview.textContent = `¥ ${(h * w).toLocaleString()}`;
-        };
-    });
-}
-
-function setDefaultDates() {
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('expense-date').value = today;
-    document.getElementById('income-date').value = today;
-    document.getElementById('shift-date').value = today;
+    // モーダル
+    document.querySelectorAll('.btn-close').forEach(btn => btn.onclick = closeModals);
+    document.getElementById('modal-submit-btn').onclick = handleModalSubmit;
+    document.getElementById('submit-collect').onclick = handleCollectSalary;
 }
 
 // --- 認証 ---
@@ -86,197 +51,237 @@ async function checkAuth() {
     try {
         const res = await fetch('/api/data');
         if (res.ok) {
-            const data = await res.json();
-            appData = data;
+            appData = await res.json();
             showScreen('main');
             renderDashboard();
         } else {
             showScreen('login');
         }
-    } catch (e) {
-        showScreen('login');
-    }
+    } catch (e) { showScreen('login'); }
 }
 
 async function login() {
-    const username = usernameInput.value;
-    const password = passwordInput.value;
+    const u = document.getElementById('username').value;
+    const p = document.getElementById('password').value;
+    const err = document.getElementById('login-error');
+    err.textContent = 'ログイン中...';
     
     try {
         const res = await fetch('/api/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify({ username: u, password: p })
         });
         const result = await res.json();
-        
-        if (result.success) {
-            loginError.textContent = '';
+        if (res.ok) {
             checkAuth();
         } else {
-            loginError.textContent = result.message;
+            err.textContent = result.message || 'ログインに失敗しました';
         }
     } catch (e) {
-        loginError.textContent = 'サーバーエラーが発生しました';
+        console.error(e);
+        err.textContent = 'サーバーに接続できません。http://localhost:3000 にアクセスしているか確認してください。';
     }
 }
 
 async function logout() {
     await fetch('/api/logout', { method: 'POST' });
-    showScreen('login');
+    location.reload();
 }
 
-// --- データ処理 ---
-async function submitExpense() {
-    const amount = document.getElementById('expense-amount').value;
-    const category = document.getElementById('expense-category').value;
-    const date = document.getElementById('expense-date').value;
-    const description = document.getElementById('expense-desc').value;
-
-    if (!amount) return alert('金額を入力してください');
-
-    const res = await fetch('/api/expense', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, category, date, description })
-    });
-
-    if (res.ok) {
-        closeModal();
-        await checkAuth(); // 再取得して描画
-    }
+async function resetData() {
+    if (!confirm('全てのデータを消去し、リセットしますか？')) return;
+    await fetch('/api/reset', { method: 'POST' });
+    checkAuth();
 }
 
-async function submitShift() {
-    const hours = document.getElementById('shift-hours').value;
-    const wage = document.getElementById('shift-wage').value;
-    const date = document.getElementById('shift-date').value;
-
-    if (!hours) return alert('時間を入力してください');
-
-    const res = await fetch('/api/shift', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hours, date, hourlyWage: wage })
-    });
-
-    if (res.ok) {
-        closeModal();
-        await checkAuth();
-    }
-}
-
-async function submitIncome() {
-    const amount = document.getElementById('income-amount').value;
-    const date = document.getElementById('income-date').value;
-    const description = document.getElementById('income-desc').value;
-
-    if (!amount) return alert('金額を入力してください');
-
-    const res = await fetch('/api/income', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, date, description })
-    });
-
-    if (res.ok) {
-        closeModal();
-        await checkAuth();
-    }
-}
-
-async function submitInitSavings() {
-    const amount = document.getElementById('init-amount').value;
-    if (!amount) return alert('金額を入力してください');
-
-    const res = await fetch('/api/init-savings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount })
-    });
-
-    if (res.ok) {
-        closeModal();
-        await checkAuth();
-    }
-}
-
-async function collectSalary() {
-    if (!confirm('未受取のバイト代をすべて貯金に追加しますか？')) return;
-    
-    const res = await fetch('/api/collect-salary', { method: 'POST' });
-    if (res.ok) {
-        await checkAuth();
-    }
-}
-
-// --- UI更新 ---
 function showScreen(screen) {
-    loginScreen.classList.remove('active');
-    mainScreen.classList.remove('active');
-    
-    if (screen === 'login') loginScreen.classList.add('active');
-    else mainScreen.classList.add('active');
-}
-
-function renderDashboard() {
-    totalSavingsDisplay.textContent = `¥ ${appData.savings.toLocaleString()}`;
-    pendingSalaryDisplay.textContent = `¥ ${appData.pendingSalary.toLocaleString()}`;
-    
-    // 給与受け取りボタンの表示制御
-    if (appData.pendingSalary > 0) {
-        if (!document.getElementById('btn-collect')) {
-            const btn = document.createElement('button');
-            btn.id = 'btn-collect';
-            btn.className = 'btn-collect-salary';
-            btn.textContent = '給料を受け取る';
-            btn.onclick = collectSalary;
-            document.querySelector('.pending-salary').appendChild(btn);
-        }
+    const l = document.getElementById('login-screen');
+    const m = document.getElementById('main-screen');
+    if (screen === 'main') {
+        l.classList.remove('active');
+        m.classList.add('active');
+        // アニメーションのリセット（再ログイン時）
+        document.querySelectorAll('.reveal-item').forEach(el => {
+            el.style.animation = 'none';
+            el.offsetHeight; /* reflow */
+            el.style.animation = '';
+        });
     } else {
-        document.getElementById('btn-collect')?.remove();
+        l.classList.add('active');
+        m.classList.remove('active');
     }
-
-    document.getElementById('shift-wage').value = appData.hourlyWage;
-    
-    // 履歴の統合とソート
-    const history = [
-        ...appData.expenses.map(e => ({ ...e, type: 'expense', title: e.category, sub: e.description })),
-        ...appData.shifts.map(s => ({ ...s, type: 'income', title: 'バイト給与', sub: `${s.hours}時間勤務` })),
-        ...(appData.incomes || []).map(i => ({ ...i, type: 'income', title: '臨時収入', sub: i.description }))
-    ];
-    
-    history.sort((a, b) => new Date(b.date || b.id) - new Date(a.date || a.id));
-
-    if (history.length === 0) {
-        historyList.innerHTML = '<p class="empty-msg">履歴はまだありません</p>';
-        return;
-    }
-
-    historyList.innerHTML = history.slice(0, 10).map(item => `
-        <div class="history-item">
-            <div class="history-info">
-                <span class="title">${item.title} ${item.sub ? `<small>(${item.sub})</small>` : ''}</span>
-                <span class="date">${item.date || '日付不明'}</span>
-            </div>
-            <div class="history-amount ${item.type}">
-                ${item.type === 'expense' ? '-' : '+'} ¥ ${(item.amount || item.earnings).toLocaleString()}
-            </div>
-        </div>
-    `).join('');
 }
 
-// --- モーダルユーティリティ ---
-function openModal(type) {
-    modals[type].classList.add('active');
+// --- ダッシュボード描画 ---
+function renderDashboard() {
+    document.getElementById('cash-balance').textContent = `¥ ${appData.cashBalance.toLocaleString()}`;
+    document.getElementById('paypay-balance').textContent = `¥ ${appData.paypayBalance.toLocaleString()}`;
+    document.getElementById('pending-salary-value').textContent = `¥ ${appData.pendingSalary.toLocaleString()}`;
+    document.getElementById('user-display').textContent = `admin`;
+
+    const collectBtn = document.getElementById('btn-collect-salary');
+    if (appData.pendingSalary > 0) collectBtn.classList.remove('hidden');
+    else collectBtn.classList.add('hidden');
+
+    updateCharts();
+    renderCalendar();
 }
 
-function closeModal() {
-    Object.values(modals).forEach(m => m.classList.remove('active'));
+function updateCharts() {
+    const exCtx = document.getElementById('expense-chart').getContext('2d');
+    const inCtx = document.getElementById('income-chart').getContext('2d');
+
+    const expData = { '食費': 0, '日用品': 0, '衣服': 0, '美容': 0, '遊び': 0, 'その他': 0 };
+    appData.expenses.forEach(e => { if (expData[e.category] !== undefined) expData[e.category] += e.amount; });
+
+    const incData = { 'お小遣い等': 0, 'バイト代': 0 };
+    appData.incomes.forEach(i => incData['お小遣い等'] += i.amount);
+    appData.shifts.forEach(s => incData['バイト代'] += s.earnings);
+
+    if (expenseChart) expenseChart.destroy();
+    expenseChart = new Chart(exCtx, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(expData),
+            datasets: [{ data: Object.values(expData), backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#94a3b8'] }]
+        },
+        options: { plugins: { legend: { display: false } }, cutout: '75%', maintainAspectRatio: false }
+    });
+
+    if (incomeChart) incomeChart.destroy();
+    incomeChart = new Chart(inCtx, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(incData),
+            datasets: [{ data: Object.values(incData), backgroundColor: ['#6366f1', '#fbbf24'] }]
+        },
+        options: { plugins: { legend: { display: false } }, cutout: '75%', maintainAspectRatio: false }
+    });
 }
 
-window.onclick = (event) => {
-    if (Object.values(modals).includes(event.target)) {
-        closeModal();
+function renderCalendar() {
+    const grid = document.getElementById('calendar-grid');
+    grid.innerHTML = '';
+    const dateObj = new Date(currentYear, currentMonth);
+    document.getElementById('current-month-display').textContent = `${currentYear}.${String(currentMonth + 1).padStart(2, '0')}`;
+
+    const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+    const days = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+    for (let i = 0; i < firstDay; i++) grid.appendChild(document.createElement('div'));
+
+    for (let d = 1; d <= days; d++) {
+        const cell = document.createElement('div');
+        cell.className = 'day-cell';
+        const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        
+        const dayExp = appData.expenses.filter(e => e.date === dateStr).reduce((s, e) => s + e.amount, 0);
+        const dayInc = appData.incomes.filter(i => i.date === dateStr).reduce((s, i) => s + i.amount, 0);
+        const daySh = appData.shifts.filter(s => s.date === dateStr).reduce((s, s_obj) => s + s_obj.earnings, 0);
+
+        cell.innerHTML = d;
+        if (dayExp > 0) {
+            cell.classList.add('has-data');
+            cell.innerHTML += `<span class="sum-expense">-¥${dayExp.toLocaleString()}</span>`;
+        }
+        if (dayInc + daySh > 0) cell.classList.add('has-data');
+
+        cell.onclick = () => showDayDetail(dateStr);
+        grid.appendChild(cell);
     }
-};
+}
+
+function changeMonth(diff) {
+    currentMonth += diff;
+    if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+    else if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+    renderCalendar();
+}
+
+// --- モーダル ---
+let currentAction = '';
+function openActionModal(type) {
+    currentAction = type;
+    const b = document.getElementById('modal-body');
+    const t = document.getElementById('modal-title');
+    const today = new Date().toISOString().split('T')[0];
+    let html = '';
+
+    if (type === 'expense') {
+        t.textContent = '💸 支出を入力';
+        html = `
+            <div class="input-group"><label>金額</label><input type="number" id="m-amount" placeholder="0"></div>
+            <div class="input-group"><label>項目</label><select id="m-cat"><option>食費</option><option>日用品</option><option>衣服</option><option>美容</option><option>遊び</option><option>その他</option></select></div>
+            <div class="input-group"><label>日付</label><input type="date" id="m-date" value="${today}"></div>
+            <div class="payment-selection"><label class="payment-option"><input type="radio" name="m-pm" value="cash" checked><span>現金</span></label><label class="payment-option"><input type="radio" name="m-pm" value="paypay"><span>PayPay</span></label></div>
+        `;
+    } else if (type === 'income') {
+        t.textContent = '🎁 収入を入力';
+        html = `
+            <div class="input-group"><label>金額</label><input type="number" id="m-amount" placeholder="0"></div>
+            <div class="input-group"><label>日付</label><input type="date" id="m-date" value="${today}"></div>
+            <div class="input-group"><label>メモ</label><input type="text" id="m-desc"></div>
+            <div class="payment-selection"><label class="payment-option"><input type="radio" name="m-pm" value="cash" checked><span>現金</span></label><label class="payment-option"><input type="radio" name="m-pm" value="paypay"><span>PayPay</span></label></div>
+        `;
+    } else if (type === 'shift') {
+        t.textContent = '🕒 シフト追加';
+        html = `
+            <div class="input-group"><label>勤務時間(h)</label><input type="number" id="m-hours" step="0.1"></div>
+            <div class="input-group"><label>日付</label><input type="date" id="m-date" value="${today}"></div>
+        `;
+    } else if (type === 'init') {
+        t.textContent = '💰 残高修正';
+        html = `
+            <div class="input-group"><label>現金</label><input type="number" id="m-cash" value="${appData.cashBalance}"></div>
+            <div class="input-group"><label>PayPay</label><input type="number" id="m-paypay" value="${appData.paypayBalance}"></div>
+        `;
+    }
+
+    b.innerHTML = html;
+    document.getElementById('modal-container').classList.add('active');
+}
+
+async function handleModalSubmit() {
+    let url = '', body = {};
+    const d = document.getElementById('m-date')?.value;
+    const pm = document.querySelector('input[name="m-pm"]:checked')?.value;
+
+    if (currentAction === 'expense') {
+        url = '/api/expense';
+        body = { amount: document.getElementById('m-amount').value, category: document.getElementById('m-cat').value, date: d, paymentMethod: pm, description: '' };
+    } else if (currentAction === 'income') {
+        url = '/api/income';
+        body = { amount: document.getElementById('m-amount').value, date: d, paymentMethod: pm, description: document.getElementById('m-desc').value };
+    } else if (currentAction === 'shift') {
+        url = '/api/shift';
+        body = { hours: document.getElementById('m-hours').value, date: d, hourlyWage: appData.hourlyWage };
+    } else if (currentAction === 'init') {
+        url = '/api/init-savings';
+        body = { cashAmount: document.getElementById('m-cash').value, paypayAmount: document.getElementById('m-paypay').value };
+    }
+
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (res.ok) { closeModals(); checkAuth(); }
+}
+
+async function handleCollectSalary() {
+    const pm = document.querySelector('input[name="collect-method"]:checked').value;
+    const res = await fetch('/api/collect-salary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentMethod: pm }) });
+    if (res.ok) { closeModals(); checkAuth(); }
+}
+
+function closeModals() { document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')); }
+
+function showDayDetail(date) {
+    const exps = appData.expenses.filter(e => e.date === date);
+    const incs = appData.incomes.filter(i => i.date === date);
+    const shifts = appData.shifts.filter(s => s.date === date);
+    if (!exps.length && !incs.length && !shifts.length) return;
+
+    let msg = `${date} の記録:\n\n`;
+    exps.forEach(e => msg += `・支出 ${e.category}: ¥${e.amount.toLocaleString()} (${e.paymentMethod})\n`);
+    incs.forEach(i => msg += `・収入 ${i.description}: ¥${i.amount.toLocaleString()} (${i.paymentMethod})\n`);
+    shifts.forEach(s => msg += `・バイト ${s.hours}h: ¥${s.earnings.toLocaleString()}\n`);
+    alert(msg);
+}

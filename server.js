@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data.json');
 
 app.use(bodyParser.json());
@@ -15,17 +15,19 @@ app.use(session({
     secret: 'bait-kakeibo-secret',
     resave: false,
     saveUninitialized: true,
-    cookie: { secure: false } // ローカル開発用
+    cookie: { secure: false }
 }));
+
+const getInitialData = () => ({
+    users: [{ username: 'admin', password: 'admin', cashBalance: 0, paypayBalance: 0, hourlyWage: 1100 }],
+    expenses: [],
+    shifts: [],
+    incomes: []
+});
 
 // データファイルの初期化
 if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({
-        users: [{ username: 'admin', password: 'admin', savings: 0, hourlyWage: 1100 }],
-        expenses: [],
-        shifts: [],
-        incomes: []
-    }, null, 2));
+    fs.writeFileSync(DATA_FILE, JSON.stringify(getInitialData(), null, 2));
 }
 
 const readData = () => JSON.parse(fs.readFileSync(DATA_FILE));
@@ -35,19 +37,30 @@ const writeData = (data) => fs.writeFileSync(DATA_FILE, JSON.stringify(data, nul
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     const data = readData();
-    const user = data.users.find(u => u.username === username && u.password === password);
+    const user = (data.users || []).find(u => 
+        u.username.toLowerCase() === username.toLowerCase() && u.password === password
+    );
     
+    console.log(`Login attempt: ${username}`);
     if (user) {
-        req.session.username = username;
-        res.json({ success: true, user: { username: user.username, savings: user.savings, hourlyWage: user.hourlyWage } });
+        req.session.username = user.username; // DBにある正しいケースで保存
+        res.json({ success: true, user: { username: user.username } });
     } else {
-        res.status(401).json({ success: false, message: 'ユーザー名またはパスワードが違います' });
+        console.log(`Login failed for: ${username}`);
+        res.status(401).json({ success: false, message: 'ログインに失敗しました。ユーザー名またはパスワードが間違っています。' });
     }
 });
 
 // ログアウトAPI
 app.post('/api/logout', (req, res) => {
     req.session.destroy();
+    res.json({ success: true });
+});
+
+// リセットAPI
+app.post('/api/reset', (req, res) => {
+    if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
+    writeData(getInitialData());
     res.json({ success: true });
 });
 
@@ -61,13 +74,13 @@ app.get('/api/data', (req, res) => {
     const userShifts = data.shifts.filter(s => s.username === req.session.username);
     const userIncomes = (data.incomes || []).filter(i => i.username === req.session.username);
     
-    // 未受取の給与総額を計算 (paid: false のもののみ)
     const pendingSalary = userShifts
         .filter(s => !s.paid)
         .reduce((sum, s) => sum + s.earnings, 0);
 
     res.json({
-        savings: user.savings,
+        cashBalance: user.cashBalance || 0,
+        paypayBalance: user.paypayBalance || 0,
         hourlyWage: user.hourlyWage,
         expenses: userExpenses,
         shifts: userShifts,
@@ -80,29 +93,61 @@ app.get('/api/data', (req, res) => {
 app.post('/api/expense', (req, res) => {
     if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
     
-    const { amount, category, date, description } = req.body;
+    const { amount, category, date, description, paymentMethod } = req.body;
     const data = readData();
     const userIndex = data.users.findIndex(u => u.username === req.session.username);
     
-    // 支出を記録
     const newExpense = {
         id: Date.now(),
         username: req.session.username,
         amount: parseInt(amount),
         category,
         date,
-        description
+        description,
+        paymentMethod // 'cash' | 'paypay'
     };
     data.expenses.push(newExpense);
     
-    // 貯金を減らす
-    data.users[userIndex].savings -= parseInt(amount);
+    // 指定した支払い方法の残高を減らす
+    if (paymentMethod === 'paypay') {
+        data.users[userIndex].paypayBalance = (data.users[userIndex].paypayBalance || 0) - parseInt(amount);
+    } else {
+        data.users[userIndex].cashBalance = (data.users[userIndex].cashBalance || 0) - parseInt(amount);
+    }
     
     writeData(data);
-    res.json({ success: true, savings: data.users[userIndex].savings });
+    res.json({ success: true });
 });
 
-// シフト（バイト）追加API
+// 収入追加API
+app.post('/api/income', (req, res) => {
+    if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
+    
+    const { amount, date, description, paymentMethod } = req.body;
+    const data = readData();
+    const userIndex = data.users.findIndex(u => u.username === req.session.username);
+    
+    const newIncome = {
+        id: Date.now(),
+        username: req.session.username,
+        amount: parseInt(amount),
+        date,
+        description,
+        paymentMethod
+    };
+    data.incomes.push(newIncome);
+    
+    if (paymentMethod === 'paypay') {
+        data.users[userIndex].paypayBalance += parseInt(amount);
+    } else {
+        data.users[userIndex].cashBalance += parseInt(amount);
+    }
+    
+    writeData(data);
+    res.json({ success: true });
+});
+
+// シフト追加API
 app.post('/api/shift', (req, res) => {
     if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
     
@@ -113,32 +158,29 @@ app.post('/api/shift', (req, res) => {
     const wage = hourlyWage || data.users[userIndex].hourlyWage;
     const earnings = parseFloat(hours) * parseInt(wage);
     
-    // シフトを記録 (ここでは貯金には加算しない)
     const newShift = {
         id: Date.now(),
         username: req.session.username,
         hours: parseFloat(hours),
         earnings: earnings,
         date,
-        paid: false // 月末払いのためのフラグ
+        paid: false
     };
     data.shifts.push(newShift);
-    
-    // 時給設定のみ更新
     data.users[userIndex].hourlyWage = parseInt(wage);
     
     writeData(data);
-    res.json({ success: true, savings: data.users[userIndex].savings });
+    res.json({ success: true });
 });
 
-// 給料をすべて受け取って貯金に入れるAPI
+// 給与受取API
 app.post('/api/collect-salary', (req, res) => {
     if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
     
+    const { paymentMethod } = req.body; // 受け取り先を指定可能にする
     const data = readData();
     const userIndex = data.users.findIndex(u => u.username === req.session.username);
     
-    // 未受取の給与を計算して貯金に加算し、フラグを更新
     let totalCollected = 0;
     data.shifts.forEach(s => {
         if (s.username === req.session.username && !s.paid) {
@@ -147,50 +189,29 @@ app.post('/api/collect-salary', (req, res) => {
         }
     });
     
-    data.users[userIndex].savings += totalCollected;
+    if (paymentMethod === 'paypay') {
+        data.users[userIndex].paypayBalance += totalCollected;
+    } else {
+        data.users[userIndex].cashBalance += totalCollected;
+    }
     
     writeData(data);
-    res.json({ success: true, savings: data.users[userIndex].savings, collected: totalCollected });
+    res.json({ success: true });
 });
 
-// 収入（お小遣い等）追加API
-app.post('/api/income', (req, res) => {
-    if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
-    
-    const { amount, date, description } = req.body;
-    const data = readData();
-    const userIndex = data.users.findIndex(u => u.username === req.session.username);
-    
-    // 収入を記録
-    const newIncome = {
-        id: Date.now(),
-        username: req.session.username,
-        amount: parseInt(amount),
-        date,
-        description
-    };
-    if (!data.incomes) data.incomes = [];
-    data.incomes.push(newIncome);
-    
-    // 貯金を増やす
-    data.users[userIndex].savings += parseInt(amount);
-    
-    writeData(data);
-    res.json({ success: true, savings: data.users[userIndex].savings });
-});
-
-// 初期貯金設定API
+// 初期残高設定API
 app.post('/api/init-savings', (req, res) => {
     if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
     
-    const { amount } = req.body;
+    const { cashAmount, paypayAmount } = req.body;
     const data = readData();
     const userIndex = data.users.findIndex(u => u.username === req.session.username);
     
-    data.users[userIndex].savings = parseInt(amount);
+    data.users[userIndex].cashBalance = parseInt(cashAmount || 0);
+    data.users[userIndex].paypayBalance = parseInt(paypayAmount || 0);
     
     writeData(data);
-    res.json({ success: true, savings: data.users[userIndex].savings });
+    res.json({ success: true });
 });
 
 app.listen(PORT, () => {
