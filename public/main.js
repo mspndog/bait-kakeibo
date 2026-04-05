@@ -335,7 +335,8 @@ function openActionModal(type) {
     } else if (type === 'shift') {
         t.textContent = '🕒 シフト追加';
         html = `
-            <div class="input-group"><label>勤務時間(h)</label><input type="number" id="m-hours" step="0.1"></div>
+            <div class="input-group"><label>勤務時間(h)</label><input type="number" id="m-hours" step="0.1" placeholder="例: 5.5"></div>
+            <div class="input-group"><label>時給(¥)</label><input type="number" id="m-wage" value="${appData.hourlyWage || 1100}"></div>
             <div class="input-group"><label>日付</label><input type="date" id="m-date" value="${today}"></div>
         `;
     } else if (type === 'init') {
@@ -351,9 +352,15 @@ function openActionModal(type) {
 }
 
 async function handleModalSubmit() {
+    // 連続タップ防止
+    const btn = document.getElementById('modal-submit-btn');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+
     let url = '', body = {};
-    const d = document.getElementById('m-date')?.value;
-    const pm = document.querySelector('input[name="m-pm"]:checked')?.value;
+    const d = document.getElementById('m-date')?.value || new Date().toISOString().split('T')[0];
+    const pm = document.querySelector('input[name="m-pm"]:checked')?.value || 'cash';
 
     if (currentAction === 'expense') {
         url = '/api/expense';
@@ -363,23 +370,53 @@ async function handleModalSubmit() {
         body = { amount: document.getElementById('m-amount').value, date: d, paymentMethod: pm, description: document.getElementById('m-desc').value };
     } else if (currentAction === 'shift') {
         url = '/api/shift';
-        body = { hours: document.getElementById('m-hours').value, date: d, hourlyWage: appData.hourlyWage };
+        body = { hours: document.getElementById('m-hours').value, date: d, hourlyWage: document.getElementById('m-wage').value };
     } else if (currentAction === 'init') {
         url = '/api/init-savings';
         body = { cashAmount: document.getElementById('m-cash').value, paypayAmount: document.getElementById('m-paypay').value };
     }
 
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (res.ok) { closeModals(); checkAuth(); }
+    try {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (res.ok) { 
+            closeModals(); 
+            await checkAuth(); 
+        } else {
+            alert('エラーが発生しました。入力内容を確認してください。');
+        }
+    } catch (e) {
+        alert('通信エラーが発生しました。接続を確認してください。');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '保存';
+    }
 }
 
 async function handleCollectSalary() {
+    const btn = document.getElementById('submit-collect');
+    if (btn.disabled) return;
+    btn.disabled = true;
+
     const pm = document.querySelector('input[name="collect-method"]:checked').value;
-    const res = await fetch('/api/collect-salary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentMethod: pm }) });
-    if (res.ok) { closeModals(); checkAuth(); }
+    try {
+        const res = await fetch('/api/collect-salary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentMethod: pm }) });
+        if (res.ok) { 
+            closeModals(); 
+            await checkAuth(); 
+        }
+    } finally {
+        btn.disabled = false;
+    }
 }
 
-function closeModals() { document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')); }
+function closeModals() { 
+    document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')); 
+    // ボタンの連続タップ防止用タイマー（アニメーション完了までブロック）
+    document.querySelectorAll('.action-tile').forEach(b => {
+        b.style.pointerEvents = 'none';
+        setTimeout(() => b.style.pointerEvents = 'auto', 400); // 0.4秒後に操作許可
+    });
+}
 
 function showDayDetail(date) {
     const exps = appData.expenses.filter(e => e.date === date);
