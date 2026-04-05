@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>バイト家計簿 | バンクレスのお金管理</title>
+    <!-- Google Fonts: Inter & Noto Sans JP -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- ログイン画面 -->
+        <div id="login-screen" class="screen active">
+            <div class="login-card">
+                <div class="logo">
+                    <span class="logo-icon">💰</span>
+                    <h1>バイト家計簿</h1>
+                </div>
+                <p class="subtitle">銀行いらずのお金管理アプリ</p>
+                <div class="login-form">
+                    <div class="input-group">
+                        <label for="username">ユーザー名</label>
+                        <input type="text" id="username" placeholder="admin" value="admin">
+                    </div>
+                    <div class="input-group">
+                        <label for="password">パスワード</label>
+                        <input type="password" id="password" placeholder="admin" value="admin">
+                    </div>
+                    <button id="login-btn" class="primary-btn">ログイン</button>
+                    <p id="login-error" class="error-msg"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- メイン画面 -->
+        <div id="main-screen" class="screen">
+            <header>
+                <div class="header-left">
+                    <span class="logo-sm">💰 バイト家計簿</span>
+                </div>
+                <div class="header-right">
+                    <span id="user-display">admin</span>
+                    <button id="logout-btn" class="text-btn">ログアウト</button>
+                </div>
+            </header>
+
+            <main class="container">
+                <!-- 貯金・残高カード -->
+                <section class="balance-section card">
+                    <div class="balance-content">
+                        <p class="label">現在の貯金・所持金</p>
+                        <h2 id="total-savings">¥ 0</h2>
+                        <div class="balance-actions">
+                            <button id="btn-set-init" class="secondary-btn">初期残高を設定</button>
+                        </div>
+                    </div>
+                    <div class="balance-illustration">
+                        <div class="coin-stack"></div>
+                    </div>
+                </section>
+
+                <!-- クイックアクション -->
+                <div class="action-grid">
+                    <button id="btn-add-expense" class="action-card">
+                        <span class="icon">💸</span>
+                        <span>支出を記録</span>
+                    </button>
+                    <button id="btn-add-shift" class="action-card">
+                        <span class="icon">🕒</span>
+                        <span>バイト代を追加</span>
+                    </button>
+                </div>
+
+                <!-- 履歴セクション -->
+                <section class="history-section">
+                    <div class="section-header">
+                        <h3>最近の履歴</h3>
+                    </div>
+                    <div id="history-list" class="history-list">
+                        <!-- 動的に追加される -->
+                        <p class="empty-msg">履歴はまだありません</p>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <!-- 支出入力モーダル -->
+        <div id="modal-expense" class="modal">
+            <div class="modal-content">
+                <h3>💸 支出を記録</h3>
+                <div class="input-group">
+                    <label>金額 (円)</label>
+                    <input type="number" id="expense-amount" placeholder="500">
+                </div>
+                <div class="input-group">
+                    <label>カテゴリー</label>
+                    <select id="expense-category">
+                        <option value="食費">食費</option>
+                        <option value="交通費">交通費</option>
+                        <option value="娯楽">娯楽</option>
+                        <option value="生活用品">生活用品</option>
+                        <option value="その他">その他</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>日付</label>
+                    <input type="date" id="expense-date">
+                </div>
+                <div class="input-group">
+                    <label>メモ</label>
+                    <input type="text" id="expense-desc" placeholder="お昼ごはんなど">
+                </div>
+                <div class="modal-btns">
+                    <button class="btn-cancel">キャンセル</button>
+                    <button id="submit-expense" class="primary-btn">記録する</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- バイト代入力モーダル -->
+        <div id="modal-shift" class="modal">
+            <div class="modal-content">
+                <h3>🕒 バイト代を計算</h3>
+                <div class="input-group">
+                    <label>本日の労働時間 (h)</label>
+                    <input type="number" id="shift-hours" step="0.5" placeholder="5.5">
+                </div>
+                <div class="input-group">
+                    <label>適用時給 (円)</label>
+                    <input type="number" id="shift-wage" value="1100">
+                </div>
+                <div class="input-group">
+                    <label>日付</label>
+                    <input type="date" id="shift-date">
+                </div>
+                <div class="salary-preview">
+                    <span>推定給与: </span>
+                    <strong id="salary-calc-preview">¥ 0</strong>
+                </div>
+                <div class="modal-btns">
+                    <button class="btn-cancel">キャンセル</button>
+                    <button id="submit-shift" class="primary-btn">貯金に足す</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 初期残高設定モーダル -->
+        <div id="modal-init" class="modal">
+            <div class="modal-content">
+                <h3>💰 初期残高の設定</h3>
+                <p>現在の正確な所持金額を入力してください。</p>
+                <div class="input-group">
+                    <label>現在の金額 (円)</label>
+                    <input type="number" id="init-amount" placeholder="10000">
+                </div>
+                <div class="modal-btns">
+                    <button class="btn-cancel">キャンセル</button>
+                    <button id="submit-init" class="primary-btn">保存する</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="main.js"></script>
+</body>
+</html>
