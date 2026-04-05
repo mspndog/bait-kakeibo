@@ -23,9 +23,18 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupEventListeners() {
-    // 認証
+    // 認証タブトグル
+    document.getElementById('tab-login').onclick = () => toggleAuthMode('login');
+    document.getElementById('tab-register').onclick = () => toggleAuthMode('register');
+
+    // 認証アクション
     document.getElementById('login-btn').onclick = login;
-    document.getElementById('password').onkeydown = (e) => { if (e.key === 'Enter') login(); };
+    document.getElementById('register-btn').onclick = register;
+    document.getElementById('password').onkeydown = (e) => { 
+        if (e.key === 'Enter') {
+            document.getElementById('login-btn').classList.contains('hidden') ? register() : login();
+        } 
+    };
     document.getElementById('logout-btn').onclick = logout;
     document.getElementById('btn-reset').onclick = resetData;
 
@@ -80,7 +89,51 @@ async function login() {
         }
     } catch (e) {
         console.error(e);
-        err.textContent = 'サーバーに接続できません。http://localhost:3000 にアクセスしているか確認してください。';
+        err.textContent = 'サーバーに接続できません。';
+    }
+}
+
+async function register() {
+    const u = document.getElementById('username').value;
+    const p = document.getElementById('password').value;
+    const err = document.getElementById('login-error');
+    err.textContent = '登録中...';
+    
+    try {
+        const res = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: u, password: p })
+        });
+        const result = await res.json();
+        if (res.ok) {
+            checkAuth();
+        } else {
+            err.textContent = result.message || '登録に失敗しました';
+        }
+    } catch (e) {
+        console.error(e);
+        err.textContent = 'サーバーに接続できません。';
+    }
+}
+
+function toggleAuthMode(mode) {
+    const tLogin = document.getElementById('tab-login');
+    const tReg = document.getElementById('tab-register');
+    const bLogin = document.getElementById('login-btn');
+    const bReg = document.getElementById('register-btn');
+    document.getElementById('login-error').textContent = '';
+
+    if (mode === 'login') {
+        tLogin.classList.add('active');
+        tReg.classList.remove('active');
+        bLogin.classList.remove('hidden');
+        bReg.classList.add('hidden');
+    } else {
+        tLogin.classList.remove('active');
+        tReg.classList.add('active');
+        bLogin.classList.add('hidden');
+        bReg.classList.remove('hidden');
     }
 }
 

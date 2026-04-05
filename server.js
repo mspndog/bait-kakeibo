@@ -51,6 +51,39 @@ app.post('/api/login', (req, res) => {
     }
 });
 
+// 新規登録API
+app.post('/api/register', (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ success: false, message: 'ユーザー名とパスワードを入力してください。' });
+    }
+
+    const data = readData();
+    // すでに同じ名前のユーザーがいるかチェック
+    const isExist = (data.users || []).some(u => u.username.toLowerCase() === username.toLowerCase());
+    if (isExist) {
+        return res.status(409).json({ success: false, message: 'このユーザー名はすでに使われています。別の名前を指定してください。' });
+    }
+
+    // 新規ユーザー追加
+    const newUser = {
+        username: username,
+        password: password,
+        cashBalance: 0,
+        paypayBalance: 0,
+        hourlyWage: 1100
+    };
+    if (!data.users) data.users = [];
+    data.users.push(newUser);
+    writeData(data);
+    
+    // そのままログイン状態にする
+    console.log(`New user registered: ${username}`);
+    req.session.username = username;
+    res.json({ success: true, user: { username: newUser.username } });
+});
+
+
 // ログアウトAPI
 app.post('/api/logout', (req, res) => {
     req.session.destroy();

@@ -40,11 +40,16 @@ body {
 }
 .logo-large { font-size: 64px; margin-bottom: 20px; }
 .login-card h1 { font-size: 28px; margin-bottom: 10px; font-weight: 700; }
-.login-card p { color: var(--text-dim); margin-bottom: 30px; }
+.login-card p { color: var(--text-dim); margin-bottom: 20px; }
+
+.login-tabs { display: flex; gap: 10px; margin-bottom: 20px; background: #f1f5f9; padding: 4px; border-radius: 14px; }
+.tab-btn { flex: 1; padding: 10px; border: none; background: transparent; border-radius: 10px; cursor: pointer; font-weight: 600; color: var(--text-dim); transition: all 0.2s; }
+.tab-btn.active { background: #fff; color: var(--text-dark); box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
 
 .login-form input {
     width: 100%;
     margin-bottom: 15px;
+
     padding: 14px;
     border: 1px solid #e2e8f0;
     border-radius: 12px;
@@ -246,6 +251,8 @@ header {
 .modal-footer { display: flex; gap: 10px; margin-top: 5px; }
 .modal-footer button { flex: 1; padding: 14px; border-radius: 14px; font-size: 15px; font-weight: 700;}
 .btn-close { background: #f1f5f9; border: none; cursor: pointer; color: var(--text-dim); }
+
+.hidden { display: none !important; }
 
 /* レスポンシブ (スマホ向け微調整) */
 @media (max-width: 480px) {
