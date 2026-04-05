@@ -6,6 +6,7 @@
     <title>バイト家計簿 Pro | スマホ管理</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -98,17 +99,37 @@
                 <!-- 5. 分析グラフ (時計回り8番目) -->
                 <section class="reveal-section section-analysis reveal-item" style="--order: 8">
                     <div class="analysis-grid">
-                        <div class="chart-container card-sm">
-                            <h4>支出の内訳</h4>
-                            <div class="canvas-wrap"><canvas id="expense-chart"></canvas></div>
+                        <!-- 支出カード -->
+                        <div class="app-style-card">
+                            <div class="card-header blue-header">
+                                <span class="header-title">出金</span>
+                                <span class="header-total">合計 <span id="exp-total">0</span> 円</span>
+                            </div>
+                            <div class="card-body">
+                                <ul id="exp-list" class="legend-list"></ul>
+                                <div class="canvas-wrap app-chart-wrap">
+                                    <canvas id="expense-chart"></canvas>
+                                </div>
+                            </div>
                         </div>
-                        <div class="chart-container card-sm">
-                            <h4>収入の内訳</h4>
-                            <div class="canvas-wrap"><canvas id="income-chart"></canvas></div>
+
+                        <!-- 収入カード -->
+                        <div class="app-style-card">
+                            <div class="card-header green-header">
+                                <span class="header-title">入金</span>
+                                <span class="header-total">合計 <span id="inc-total">0</span> 円</span>
+                            </div>
+                            <div class="card-body">
+                                <ul id="inc-list" class="legend-list"></ul>
+                                <div class="canvas-wrap app-chart-wrap">
+                                    <canvas id="income-chart"></canvas>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <button id="btn-set-init" class="init-btn-flat">初期残高を修正する</button>
                 </section>
+
             </main>
         </div>
 

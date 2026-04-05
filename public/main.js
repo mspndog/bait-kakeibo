@@ -53,6 +53,13 @@ function setupEventListeners() {
     document.querySelectorAll('.btn-close').forEach(btn => btn.onclick = closeModals);
     document.getElementById('modal-submit-btn').onclick = handleModalSubmit;
     document.getElementById('submit-collect').onclick = handleCollectSalary;
+
+    // モーダル外側クリックで閉じる（フリーズ・バグ防止策）
+    document.querySelectorAll('.modal-overlay').forEach(m => {
+        m.addEventListener('click', (e) => {
+            if (e.target === m) closeModals();
+        });
+    });
 }
 
 // --- 認証 ---
@@ -185,32 +192,80 @@ function updateCharts() {
     const exCtx = document.getElementById('expense-chart').getContext('2d');
     const inCtx = document.getElementById('income-chart').getContext('2d');
 
-    const expData = { '食費': 0, '日用品': 0, '衣服': 0, '美容': 0, '遊び': 0, 'その他': 0 };
-    appData.expenses.forEach(e => { if (expData[e.category] !== undefined) expData[e.category] += e.amount; });
+    const expCategories = ['食費', '日用品', '衣服', '美容', '遊び', 'その他'];
+    const expColors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#94a3b8'];
+    const expDataObj = { '食費': 0, '日用品': 0, '衣服': 0, '美容': 0, '遊び': 0, 'その他': 0 };
+    let expTotal = 0;
+    appData.expenses.forEach(e => { 
+        if (expDataObj[e.category] !== undefined) {
+            expDataObj[e.category] += e.amount;
+            expTotal += e.amount;
+        }
+    });
 
-    const incData = { 'お小遣い等': 0, 'バイト代': 0 };
-    appData.incomes.forEach(i => incData['お小遣い等'] += i.amount);
-    appData.shifts.forEach(s => incData['バイト代'] += s.earnings);
+    const incCategories = ['お小遣い等', 'バイト代'];
+    const incColors = ['#10b981', '#f59e0b'];
+    const incDataObj = { 'お小遣い等': 0, 'バイト代': 0 };
+    let incTotal = 0;
+    appData.incomes.forEach(i => { incDataObj['お小遣い等'] += i.amount; incTotal += i.amount; });
+    appData.shifts.forEach(s => { incDataObj['バイト代'] += s.earnings; incTotal += s.earnings; });
+
+    // HTMLへの反映 (リストと合計)
+    document.getElementById('exp-total').textContent = expTotal.toLocaleString();
+    document.getElementById('inc-total').textContent = incTotal.toLocaleString();
+
+    document.getElementById('exp-list').innerHTML = expCategories.map((c, i) => {
+        const amt = expDataObj[c];
+        if(amt === 0) return '';
+        return `<li><span class="dot-name"><span class="dot" style="background:${expColors[i]}"></span>${c}</span><span>${amt.toLocaleString()}円</span></li>`;
+    }).join('');
+
+    document.getElementById('inc-list').innerHTML = incCategories.map((c, i) => {
+        const amt = incDataObj[c];
+        if(amt === 0) return '';
+        return `<li><span class="dot-name"><span class="dot" style="background:${incColors[i]}"></span>${c}</span><span>${amt.toLocaleString()}円</span></li>`;
+    }).join('');
+
+    // --- グラフ共通オプション ---
+    const chartOptions = {
+        plugins: { 
+            legend: { display: false },
+            datalabels: {
+                color: (context) => context.dataset.backgroundColor[context.dataIndex],
+                anchor: 'end', align: 'end', offset: 5,
+                font: { weight: 'bold', size: 16 },
+                formatter: (value, ctx) => {
+                    const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                    if (value === 0 || total === 0) return '';
+                    return Math.round((value / total) * 100) + '%';
+                }
+            }
+        }, 
+        cutout: '50%',
+        maintainAspectRatio: false,
+        layout: { padding: 40 }, // labelが見切れないように余白
+        elements: { arc: { borderWidth: 3, borderColor: '#ffffff' } }
+    };
 
     if (expenseChart) expenseChart.destroy();
-    expenseChart = new Chart(exCtx, {
-        type: 'doughnut',
-        data: {
-            labels: Object.keys(expData),
-            datasets: [{ data: Object.values(expData), backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#94a3b8'] }]
-        },
-        options: { plugins: { legend: { display: false } }, cutout: '75%', maintainAspectRatio: false }
-    });
+    if (expTotal > 0) {
+        expenseChart = new Chart(exCtx, {
+            plugins: [ChartDataLabels],
+            type: 'doughnut',
+            data: { labels: expCategories, datasets: [{ data: Object.values(expDataObj), backgroundColor: expColors }] },
+            options: chartOptions
+        });
+    }
 
     if (incomeChart) incomeChart.destroy();
-    incomeChart = new Chart(inCtx, {
-        type: 'doughnut',
-        data: {
-            labels: Object.keys(incData),
-            datasets: [{ data: Object.values(incData), backgroundColor: ['#6366f1', '#fbbf24'] }]
-        },
-        options: { plugins: { legend: { display: false } }, cutout: '75%', maintainAspectRatio: false }
-    });
+    if (incTotal > 0) {
+        incomeChart = new Chart(inCtx, {
+            plugins: [ChartDataLabels],
+            type: 'doughnut',
+            data: { labels: incCategories, datasets: [{ data: Object.values(incDataObj), backgroundColor: incColors }] },
+            options: chartOptions
+        });
+    }
 }
 
 function renderCalendar() {
