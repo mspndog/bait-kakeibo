@@ -1,88 +1,117 @@
 // bait-kakeibo/server.js
+require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
+const { MongoStore } = require('connect-mongo');
 const bodyParser = require('body-parser');
-const fs = require('fs');
+const mongoose = require('mongoose');
 const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, 'data.json');
+
+// URLが.envから読み込めない場合は、以下のURLを直接使いますが、本番環境(Render)では設定(Environment Variables)を使うのが安全です。
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://mspn:R4e1i7ji@cluster0.sylcl4f.mongodb.net/?appName=Cluster0";
+
+// MongoDBに接続
+mongoose.connect(MONGODB_URI).then(() => console.log('MongoDB Connected!'))
+  .catch(err => console.error('MongoDB Connection Error:', err));
 
 app.use(bodyParser.json());
 app.use(express.static('public'));
+
+// ログイン状態（セッション）もMongoDBに保存して、Render再起動でログアウトされないようにする
 app.use(session({
     secret: 'bait-kakeibo-secret',
     resave: false,
-    saveUninitialized: true,
-    cookie: { secure: false }
+    saveUninitialized: false,
+    store: MongoStore.create({ mongoUrl: MONGODB_URI }),
+    cookie: { secure: false } 
 }));
 
-const getInitialData = () => ({
-    users: [{ username: 'admin', password: 'admin', cashBalance: 0, paypayBalance: 0, hourlyWage: 1100 }],
-    expenses: [],
-    shifts: [],
-    incomes: []
+/* =======================================================
+   Mongoose Schemas (データベースの設計図)
+======================================================= */
+const userSchema = new mongoose.Schema({
+    username: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    cashBalance: { type: Number, default: 0 },
+    paypayBalance: { type: Number, default: 0 },
+    hourlyWage: { type: Number, default: 1100 }
 });
+const User = mongoose.model('User', userSchema);
 
-// データファイルの初期化
-if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(getInitialData(), null, 2));
-}
+const expenseSchema = new mongoose.Schema({
+    username: String,
+    amount: Number,
+    category: String,
+    date: String,
+    description: String,
+    paymentMethod: String
+});
+const Expense = mongoose.model('Expense', expenseSchema);
 
-const readData = () => JSON.parse(fs.readFileSync(DATA_FILE));
-const writeData = (data) => fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+const incomeSchema = new mongoose.Schema({
+    username: String,
+    amount: Number,
+    date: String,
+    description: String,
+    paymentMethod: String
+});
+const Income = mongoose.model('Income', incomeSchema);
+
+const shiftSchema = new mongoose.Schema({
+    username: String,
+    hours: Number,
+    earnings: Number,
+    date: String,
+    paid: { type: Boolean, default: false }
+});
+const Shift = mongoose.model('Shift', shiftSchema);
+
+/* =======================================================
+   API Routes
+======================================================= */
 
 // ログインAPI
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-    const data = readData();
-    const user = (data.users || []).find(u => 
-        u.username.toLowerCase() === username.toLowerCase() && u.password === password
-    );
-    
-    console.log(`Login attempt: ${username}`);
-    if (user) {
-        req.session.username = user.username; // DBにある正しいケースで保存
-        res.json({ success: true, user: { username: user.username } });
-    } else {
-        console.log(`Login failed for: ${username}`);
-        res.status(401).json({ success: false, message: 'ログインに失敗しました。ユーザー名またはパスワードが間違っています。' });
+    try {
+        const user = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, "i") }, password: password });
+        console.log(`Login attempt: ${username}`);
+        if (user) {
+            req.session.username = user.username;
+            res.json({ success: true, user: { username: user.username } });
+        } else {
+            console.log(`Login failed for: ${username}`);
+            res.status(401).json({ success: false, message: 'ログインに失敗しました。ユーザー名またはパスワードが間違っています。' });
+        }
+    } catch(e) { 
+        res.status(500).json({ success: false, message: 'サーバーエラーが発生しました。' }); 
     }
 });
 
 // 新規登録API
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
         return res.status(400).json({ success: false, message: 'ユーザー名とパスワードを入力してください。' });
     }
-
-    const data = readData();
-    // すでに同じ名前のユーザーがいるかチェック
-    const isExist = (data.users || []).some(u => u.username.toLowerCase() === username.toLowerCase());
-    if (isExist) {
-        return res.status(409).json({ success: false, message: 'このユーザー名はすでに使われています。別の名前を指定してください。' });
-    }
-
-    // 新規ユーザー追加
-    const newUser = {
-        username: username,
-        password: password,
-        cashBalance: 0,
-        paypayBalance: 0,
-        hourlyWage: 1100
-    };
-    if (!data.users) data.users = [];
-    data.users.push(newUser);
-    writeData(data);
     
-    // そのままログイン状態にする
-    console.log(`New user registered: ${username}`);
-    req.session.username = username;
-    res.json({ success: true, user: { username: newUser.username } });
+    try {
+        const existing = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, "i") } });
+        if (existing) return res.status(409).json({ success: false, message: 'このユーザー名はすでに使われています。別の名前を指定してください。' });
+        
+        const newUser = new User({ username, password, cashBalance: 0, paypayBalance: 0, hourlyWage: 1100 });
+        await newUser.save();
+        
+        console.log(`New user registered: ${username}`);
+        req.session.username = newUser.username;
+        res.json({ success: true, user: { username: newUser.username } });
+    } catch(e) { 
+        res.status(500).json({ success: false, message: 'サーバーエラーが発生しました。' }); 
+    }
 });
-
 
 // ログアウトAPI
 app.post('/api/logout', (req, res) => {
@@ -91,161 +120,169 @@ app.post('/api/logout', (req, res) => {
 });
 
 // リセットAPI
-app.post('/api/reset', (req, res) => {
+app.post('/api/reset', async (req, res) => {
     if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
-    writeData(getInitialData());
-    res.json({ success: true });
+    try {
+        const user = await User.findOne({username: req.session.username});
+        if(user) {
+             user.cashBalance = 0;
+             user.paypayBalance = 0;
+             user.hourlyWage = 1100;
+             await user.save();
+        }
+        await Expense.deleteMany({username: req.session.username});
+        await Income.deleteMany({username: req.session.username});
+        await Shift.deleteMany({username: req.session.username});
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({error: e.message}); }
 });
 
 // データ取得API
-app.get('/api/data', (req, res) => {
+app.get('/api/data', async (req, res) => {
     if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
     
-    const data = readData();
-    const user = data.users.find(u => u.username === req.session.username);
-    const userExpenses = data.expenses.filter(e => e.username === req.session.username);
-    const userShifts = data.shifts.filter(s => s.username === req.session.username);
-    const userIncomes = (data.incomes || []).filter(i => i.username === req.session.username);
-    
-    const pendingSalary = userShifts
-        .filter(s => !s.paid)
-        .reduce((sum, s) => sum + s.earnings, 0);
+    try {
+        const user = await User.findOne({username: req.session.username});
+        if(!user) return res.status(404).json({ error: 'User not found' });
 
-    res.json({
-        username: user.username,
-        cashBalance: user.cashBalance || 0,
-        paypayBalance: user.paypayBalance || 0,
-        hourlyWage: user.hourlyWage,
-        expenses: userExpenses,
-        shifts: userShifts,
-        incomes: userIncomes,
-        pendingSalary: pendingSalary
-    });
+        const expenses = await Expense.find({username: req.session.username});
+        const incomes = await Income.find({username: req.session.username});
+        const shifts = await Shift.find({username: req.session.username});
+        
+        const pendingSalary = shifts.filter(s => !s.paid).reduce((sum, s) => sum + s.earnings, 0);
+
+        res.json({
+            username: user.username,
+            cashBalance: user.cashBalance || 0,
+            paypayBalance: user.paypayBalance || 0,
+            hourlyWage: user.hourlyWage,
+            expenses: expenses,
+            shifts: shifts,
+            incomes: incomes,
+            pendingSalary: pendingSalary
+        });
+    } catch(e) { res.status(500).json({error: e.message}); }
 });
 
 // 支出追加API
-app.post('/api/expense', (req, res) => {
+app.post('/api/expense', async (req, res) => {
     if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
     
     const { amount, category, date, description, paymentMethod } = req.body;
-    const data = readData();
-    const userIndex = data.users.findIndex(u => u.username === req.session.username);
-    
-    const newExpense = {
-        id: Date.now(),
-        username: req.session.username,
-        amount: parseInt(amount),
-        category,
-        date,
-        description,
-        paymentMethod // 'cash' | 'paypay'
-    };
-    data.expenses.push(newExpense);
-    
-    // 指定した支払い方法の残高を減らす
-    if (paymentMethod === 'paypay') {
-        data.users[userIndex].paypayBalance = (data.users[userIndex].paypayBalance || 0) - parseInt(amount);
-    } else {
-        data.users[userIndex].cashBalance = (data.users[userIndex].cashBalance || 0) - parseInt(amount);
-    }
-    
-    writeData(data);
-    res.json({ success: true });
+    try {
+        const user = await User.findOne({username: req.session.username});
+        if(!user) return res.status(404).json({error: 'User not found'});
+
+        const expense = new Expense({
+             username: req.session.username,
+             amount: parseInt(amount), category, date, description, paymentMethod
+        });
+        await expense.save();
+
+        if (paymentMethod === 'paypay') {
+            user.paypayBalance -= parseInt(amount);
+        } else {
+            user.cashBalance -= parseInt(amount);
+        }
+        await user.save();
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({error: e.message}); }
 });
 
 // 収入追加API
-app.post('/api/income', (req, res) => {
+app.post('/api/income', async (req, res) => {
     if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
     
     const { amount, date, description, paymentMethod } = req.body;
-    const data = readData();
-    const userIndex = data.users.findIndex(u => u.username === req.session.username);
-    
-    const newIncome = {
-        id: Date.now(),
-        username: req.session.username,
-        amount: parseInt(amount),
-        date,
-        description,
-        paymentMethod
-    };
-    data.incomes.push(newIncome);
-    
-    if (paymentMethod === 'paypay') {
-        data.users[userIndex].paypayBalance += parseInt(amount);
-    } else {
-        data.users[userIndex].cashBalance += parseInt(amount);
-    }
-    
-    writeData(data);
-    res.json({ success: true });
+    try {
+        const user = await User.findOne({username: req.session.username});
+        if(!user) return res.status(404).json({error: 'User not found'});
+
+        const income = new Income({
+             username: req.session.username,
+             amount: parseInt(amount), date, description, paymentMethod
+        });
+        await income.save();
+
+        if (paymentMethod === 'paypay') {
+            user.paypayBalance += parseInt(amount);
+        } else {
+            user.cashBalance += parseInt(amount);
+        }
+        await user.save();
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({error: e.message}); }
 });
 
 // シフト追加API
-app.post('/api/shift', (req, res) => {
+app.post('/api/shift', async (req, res) => {
     if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
     
     const { hours, date, hourlyWage } = req.body;
-    const data = readData();
-    const userIndex = data.users.findIndex(u => u.username === req.session.username);
     
-    const wage = hourlyWage || data.users[userIndex].hourlyWage;
-    const earnings = parseFloat(hours) * parseInt(wage);
-    
-    const newShift = {
-        id: Date.now(),
-        username: req.session.username,
-        hours: parseFloat(hours),
-        earnings: earnings,
-        date,
-        paid: false
-    };
-    data.shifts.push(newShift);
-    data.users[userIndex].hourlyWage = parseInt(wage);
-    
-    writeData(data);
-    res.json({ success: true });
+    try {
+        const user = await User.findOne({username: req.session.username});
+        if(!user) return res.status(404).json({error: 'User not found'});
+
+        const wage = hourlyWage || user.hourlyWage;
+        const earnings = parseFloat(hours) * parseInt(wage);
+
+        const shift = new Shift({
+             username: req.session.username,
+             hours: parseFloat(hours), earnings, date, paid: false
+        });
+        await shift.save();
+
+        user.hourlyWage = parseInt(wage);
+        await user.save();
+
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({error: e.message}); }
 });
 
 // 給与受取API
-app.post('/api/collect-salary', (req, res) => {
+app.post('/api/collect-salary', async (req, res) => {
     if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
     
-    const { paymentMethod } = req.body; // 受け取り先を指定可能にする
-    const data = readData();
-    const userIndex = data.users.findIndex(u => u.username === req.session.username);
-    
-    let totalCollected = 0;
-    data.shifts.forEach(s => {
-        if (s.username === req.session.username && !s.paid) {
+    const { paymentMethod } = req.body;
+    try {
+        const user = await User.findOne({username: req.session.username});
+        if(!user) return res.status(404).json({error: 'User not found'});
+
+        const shifts = await Shift.find({username: req.session.username, paid: false});
+        let totalCollected = 0;
+        
+        for (let s of shifts) {
             totalCollected += s.earnings;
             s.paid = true;
+            await s.save();
         }
-    });
-    
-    if (paymentMethod === 'paypay') {
-        data.users[userIndex].paypayBalance += totalCollected;
-    } else {
-        data.users[userIndex].cashBalance += totalCollected;
-    }
-    
-    writeData(data);
-    res.json({ success: true });
+
+        if (paymentMethod === 'paypay') {
+            user.paypayBalance += totalCollected;
+        } else {
+            user.cashBalance += totalCollected;
+        }
+        await user.save();
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({error: e.message}); }
 });
 
 // 初期残高設定API
-app.post('/api/init-savings', (req, res) => {
+app.post('/api/init-savings', async (req, res) => {
     if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
     
     const { cashAmount, paypayAmount } = req.body;
-    const data = readData();
-    const userIndex = data.users.findIndex(u => u.username === req.session.username);
-    
-    data.users[userIndex].cashBalance = parseInt(cashAmount || 0);
-    data.users[userIndex].paypayBalance = parseInt(paypayAmount || 0);
-    
-    writeData(data);
-    res.json({ success: true });
+    try {
+        const user = await User.findOne({username: req.session.username});
+        if(!user) return res.status(404).json({error: 'User not found'});
+
+        user.cashBalance = parseInt(cashAmount || 0);
+        user.paypayBalance = parseInt(paypayAmount || 0);
+        await user.save();
+
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({error: e.message}); }
 });
 
 app.listen(PORT, () => {
